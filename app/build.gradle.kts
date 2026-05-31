@@ -102,4 +102,7 @@ dependencies {
     // --- NAVEGACIÓN COMPONENT ---
     implementation("androidx.navigation:navigation-compose:2.8.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // --- Drag & Drop ---
+    implementation("org.burnoutcrew.composereorderable:reorderable:0.9.6")
 }
