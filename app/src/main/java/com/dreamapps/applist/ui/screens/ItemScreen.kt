@@ -13,13 +13,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.dreamapps.applist.ui.components.BottomSearchBar
 import com.dreamapps.applist.ui.components.ItemRow
 import com.dreamapps.applist.ui.viewmodels.ItemViewModel
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +46,15 @@ fun ItemScreen(
     } else {
         items.filter { it.itemName.contains(textoBusqueda, ignoreCase = true) }
     }
+
+    // 1. Creamos los estados de la nueva librería
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState){ from, to ->
+        viewModel.reordenarItemLocal(from.index, to.index)
+    }
+
+    // 2. Deshabilitamos el arrastre si el usuario está buscando algo
+    val arrastreHabilitado = textoBusqueda.isEmpty()
 
     Scaffold(
         topBar = {
@@ -127,9 +142,34 @@ fun ItemScreen(
                         }
                     } else {
                         // LA LISTA DESPLAZABLE
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(itemsFiltrados) { item ->
-                                ItemRow(itemText = item.itemName)
+                        // 3. Renderizamos la lista
+                        LazyColumn(
+                            state = lazyListState,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(itemsFiltrados, key = { it.itemName }) { item ->
+
+                                ReorderableItem(reorderableState, key = item.itemName) { isDragging ->
+                                    val elevacionSombra = if (isDragging) 8.dp else 0.dp
+
+                                    // EL NUEVO PARADIGMA: El evento de soltar se detecta aquí
+                                    val modificadorArrastre = if (arrastreHabilitado) {
+                                        Modifier.longPressDraggableHandle(
+                                            onDragStopped = {
+                                                // ÉSTE ES EL EVENTO CUANDO LEVANTAS EL DEDO
+                                                viewModel.guardarNuevoOrden()
+                                            }
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+
+                                    // Envolvemos tu componente en el modificador
+                                    ItemRow(
+                                        itemText = item.itemName,
+                                        modifier = modificadorArrastre.shadow(elevacionSombra)
+                                    )
+                                }
                             }
                         }
                     }

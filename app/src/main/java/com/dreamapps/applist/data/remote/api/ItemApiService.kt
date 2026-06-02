@@ -23,4 +23,11 @@ interface ItemApiService {
         @Path("listCod") listCod: Int,
         @Path("itemCod") itemCod: Int
     ): Response<Unit>
+
+    // Petición PUT para enviar el nuevo orden de los ítems
+    @PUT("api/listas/{listCod}/items/orden")
+    suspend fun actualizarOrdenItems(
+        @Path("listCod") listCod: Int,
+        @Body items: List<com.dreamapps.applist.data.remote.model.ItemDto>
+    ): retrofit2.Response<Void>
 }

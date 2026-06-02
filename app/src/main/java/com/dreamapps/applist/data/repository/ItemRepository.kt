@@ -42,37 +42,39 @@ class ItemRepository(
     }
 
     // 3. SUBIR AL SERVIDOR Y GUARDAR LOCAL (Smart Diff)
+    // 3. SUBIR AL SERVIDOR Y GUARDAR LOCAL (Offline-First Real y Seguro)
     suspend fun guardarItemsSincronizados(listCod: Int, nombresNuevos: List<String>) {
+        val itemsAntiguos = itemDao.obtenerItemsListaSync(listCod)
+        val itemsABorrar = itemsAntiguos.filter { !nombresNuevos.contains(it.itemName) }
+        val nombresAntiguos = itemsAntiguos.map { it.itemName }
+        val nombresACrear = nombresNuevos.filter { !nombresAntiguos.contains(it) }
+
+        // --- FASE 1: LOCAL (Siempre funciona, con o sin internet. UI instantánea) ---
+        itemsABorrar.forEach { itemDao.eliminarItem(it) }
+
+        nombresACrear.forEach { nombre ->
+            val indiceReal = nombresNuevos.indexOf(nombre)
+            itemDao.insertarItem(
+                ItemEntity(
+                    itemName = nombre.trim(),
+                    itemOrder = indiceReal,
+                    listCod = listCod
+                )
+            )
+        }
+
+        // --- FASE 2: RED (Sincronización segura) ---
         try {
-            // 1. Tomamos la fotografía de lo que hay actualmente en Room
-            val itemsAntiguos = itemDao.obtenerItemsListaSync(listCod)
-
-            // 2. DETECTAR ELIMINADOS: Si un ítem antiguo ya no está en el texto nuevo, hay que borrarlo
-            val itemsABorrar = itemsAntiguos.filter { antiguo ->
-                !nombresNuevos.contains(antiguo.itemName)
-            }
-
-            // 3. DETECTAR NUEVOS: Si una línea del texto no existía en Room, hay que crearla
-            val nombresAntiguos = itemsAntiguos.map { it.itemName }
-            val nombresACrear = nombresNuevos.filter { nuevo ->
-                !nombresAntiguos.contains(nuevo)
-            }
-
-            // --- FASE DE RED: Hablar con Spring Boot ---
-
-            // A) Enviar las órdenes de ELIMINAR (DELETE)
+            // 1. Borramos en Spring Boot
             itemsABorrar.forEach { itemFantasma ->
-                val responseDelete = apiService.eliminarItem(listCod, itemFantasma.itemCod)
-                if (responseDelete.isSuccessful) {
-                    itemDao.eliminarItem(itemFantasma) // Lo borramos de Room también
-                    Log.d("API_TRACKER", "Ítem eliminado con éxito: ${itemFantasma.itemName}")
-                } else {
-                    Log.e("API_TRACKER", "Spring Boot no pudo eliminar: ${itemFantasma.itemName}")
+                // Solo mandamos a borrar si el ítem tenía un ID real de Spring Boot (distinto de 0)
+                if (itemFantasma.itemCod != 0) {
+                    apiService.eliminarItem(listCod, itemFantasma.itemCod)
                 }
             }
 
-            // B) Enviar las órdenes de CREAR (POST)
-            // (Usamos los nombresNuevos completos para calcular el orden correcto en la lista)
+            // 2. Creamos en Spring Boot
+            var huboCambiosExitosos = false
             nombresACrear.forEach { nombre ->
                 val indiceReal = nombresNuevos.indexOf(nombre)
                 val dto = com.dreamapps.applist.data.remote.model.ItemDto(
@@ -83,25 +85,21 @@ class ItemRepository(
 
                 val responsePost = apiService.crearItem(listCod, dto)
                 if (responsePost.isSuccessful) {
-                    val itemCreado = responsePost.body()
-                    if (itemCreado != null) {
-                        itemDao.insertarItem(
-                            ItemEntity(
-                                itemCod = itemCreado.itemCod,
-                                itemName = itemCreado.itemName,
-                                itemOrder = itemCreado.itemOrder,
-                                listCod = listCod
-                            )
-                        )
-                        Log.d("API_TRACKER", "Ítem creado con éxito: ${itemCreado.itemName}")
-                    }
+                    huboCambiosExitosos = true
                 }
             }
 
+            // 3. ¡EL TRUCO MAESTRO!
+            // Si logramos subir cosas nuevas al servidor, descargamos la lista fresca
+            // en segundo plano. Esto asegura que Room cambie los IDs temporales por
+            // los IDs oficiales (1001, 1002...) generados por PostgreSQL.
+            if (huboCambiosExitosos) {
+                sincronizarItemsConServidor(listCod)
+            }
+
         } catch (e: Exception) {
-            Log.e("API_TRACKER", "Error de red al hacer CRUD de ítems: ${e.message}")
-            // Si quieres que funcione offline perfecto, aquí deberías meter los datos a Room
-            // y marcarlos como pendientes, pero para el MVP lo dejaremos en Log.
+            // Si no hay internet, no pasa nada. La app sigue funcionando con los IDs temporales.
+            Log.e("API_TRACKER", "Modo Offline: Servidor inalcanzable. Se sincronizará luego.")
         }
     }
 
@@ -113,5 +111,40 @@ class ItemRepository(
                 listCod = listCod
             )
         )
+    }
+
+    // 4. ACTUALIZAR EL ORDEN (Drag & Drop)
+    suspend fun actualizarOrdenItemsLocales(items: List<ItemEntity>) {
+        try {
+            // 1. Guardamos el nuevo orden en Room (Local e instantáneo)
+            itemDao.actualizarMultiplesItems(items)
+
+            // 2. Filtramos los ítems fantasmas (creados offline sin ID oficial)
+            // y convertimos las entidades de Room a DTOs para enviarlos por red.
+            val itemsParaSubir = items
+                .filter { it.itemCod != 0 } // Solo ítems reales del servidor
+                .map { entity ->
+                    com.dreamapps.applist.data.remote.model.ItemDto(
+                        itemCod = entity.itemCod,
+                        itemName = entity.itemName,
+                        itemOrder = entity.itemOrder,
+                        listCod = entity.listCod
+                    )
+                }
+
+            // 3. Si hay ítems válidos para subir, le avisamos a Spring Boot
+            if (itemsParaSubir.isNotEmpty()) {
+                val listCodActual = itemsParaSubir.first().listCod
+                val response = apiService.actualizarOrdenItems(listCodActual, itemsParaSubir)
+
+                if (response.isSuccessful) {
+                    Log.d("API_TRACKER", "Nuevo orden guardado en Spring Boot con éxito")
+                } else {
+                    Log.e("API_TRACKER", "Spring Boot rechazó el nuevo orden")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("API_TRACKER", "Modo Offline: No se pudo avisar a Spring Boot sobre el nuevo orden.")
+        }
     }
 }

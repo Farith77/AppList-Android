@@ -37,18 +37,6 @@ fun ItemRow(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .then(modificadorBorde) // Aplicamos el borde
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        estaPresionado = true
-                        tryAwaitRelease() // Espera a que el dedo se levante
-                        estaPresionado = false
-                    },
-                    onLongPress = {
-                        // Aquí conectaremos la funcionalidad de arrastrar en el futuro
-                    }
-                )
-            }
             .padding(16.dp) // El padding interno (el aire dentro de la caja)
     ) {
         Text(text = itemText, style = MaterialTheme.typography.bodyLarge)

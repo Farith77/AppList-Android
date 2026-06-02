@@ -21,6 +21,10 @@ interface ItemDao {
     @Update
     suspend fun actualizarItem(item: ItemEntity)
 
+    // NUEVO: Permite actualizar las posiciones (o cualquier dato) de varios ítems de golpe
+    @Update
+    suspend fun actualizarMultiplesItems(items: List<ItemEntity>)
+
     @Delete
     suspend fun eliminarItem(item: ItemEntity)
 
