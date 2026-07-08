@@ -24,6 +24,7 @@ class ListaViewModel(private val repository: ListaRepository) : ViewModel() {
 
     val menuExpandido = MutableStateFlow(false)
     val listaSeleccionada = MutableStateFlow<ListaEntity?>(null)
+    val listasSeleccionadas = MutableStateFlow<Set<ListaEntity>>(emptySet())
 
     // CAMBIO: Se ejecuta automáticamente al abrir la pantalla
     init {
@@ -38,6 +39,42 @@ class ListaViewModel(private val repository: ListaRepository) : ViewModel() {
 
     fun toggleMenu(expandido: Boolean) { menuExpandido.value = expandido }
     fun seleccionarLista(lista: ListaEntity?) { listaSeleccionada.value = lista }
+
+    // Activa el modo selección con el primer toque largo
+    fun activarModoSeleccion(lista: ListaEntity) {
+        listasSeleccionadas.value = setOf(lista)
+    }
+
+    // Marca o desmarca una lista cuando ya estamos en modo selección
+    fun toggleSeleccion(lista: ListaEntity) {
+        val actuales = listasSeleccionadas.value.toMutableSet()
+        if (actuales.contains(lista)) actuales.remove(lista) else actuales.add(lista)
+        listasSeleccionadas.value = actuales
+    }
+
+    // Selecciona todas las listas de la pantalla
+    fun seleccionarTodas() {
+        if (listasSeleccionadas.value.size == listas.value.size) {
+            limpiarSeleccion() // Deselecciona todas (y oculta la barra superior)
+        } else {
+            listasSeleccionadas.value = listas.value.toSet() // Selecciona todas
+        }
+    }
+
+    // Cancela la selección
+    fun limpiarSeleccion() {
+        listasSeleccionadas.value = emptySet()
+    }
+
+    // --- ELIMINADO EN MASA ---
+    fun eliminarListasSeleccionadas() {
+        viewModelScope.launch {
+            listasSeleccionadas.value.forEach { lista ->
+                repository.eliminarListaSincronizada(lista)
+            }
+            limpiarSeleccion() // Salimos del modo selección tras borrar
+        }
+    }
 
     fun eliminarListaSeleccionada() {
         listaSeleccionada.value?.let { lista ->

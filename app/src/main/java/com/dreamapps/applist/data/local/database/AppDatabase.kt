@@ -11,7 +11,7 @@ import com.dreamapps.applist.data.local.entity.ListaEntity
 
 @Database(
     entities = [ListaEntity::class, ItemEntity::class], // Las tablas del diccionario de datos
-    version = 1, // Control de versiones local
+    version = 2, // Control de versiones local
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,7 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "applist_db" // El nombre del archivo SQLite en el celular
                 )
-                    // .fallbackToDestructiveMigration() // Útil en desarrollo si cambias las tablas
+                    .fallbackToDestructiveMigration() // Útil en desarrollo si cambias las tablas
                     .build()
 
                 INSTANCE = instance

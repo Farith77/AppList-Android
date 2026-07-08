@@ -6,30 +6,42 @@ import com.dreamapps.applist.data.repository.ItemRepository
 import com.dreamapps.applist.data.local.entity.ItemEntity
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import com.dreamapps.applist.data.repository.ListaRepository
+
 
 class ItemViewModel(
-    private val repository: ItemRepository,
-    private val listCod: Int
+    private val itemRepository: ItemRepository,
+    private val listaRepository: ListaRepository,
+    private val listCodOriginal: Int,
+    nombreOriginal: String
 ) : ViewModel() {
-
     // 1. EL AMORTIGUADOR: Almacena los ítems para la UI y permite arrastrarlos instantáneamente
     private val _itemsUI = MutableStateFlow<List<ItemEntity>>(emptyList())
     val items: StateFlow<List<ItemEntity>> = _itemsUI.asStateFlow()
-
+    private var currentListCod = listCodOriginal
     val enModoEdicion = MutableStateFlow(false)
     val textoEdicion = MutableStateFlow("")
+    val tituloLista = MutableStateFlow(
+        if (nombreOriginal.isNotBlank()) nombreOriginal
+        else "Lista sin nombre"
+    )
+    val tituloEdicion = MutableStateFlow("")
 
     init {
-        // 2. Escuchamos a la base de datos (Room) y pasamos los datos al amortiguador
-        viewModelScope.launch {
-            repository.obtenerItemsLocales(listCod).collect { listaDesdeRoom ->
-                _itemsUI.value = listaDesdeRoom
+        // Lógica Reactiva
+        if (currentListCod == -1) {
+            // ES UNA LISTA NUEVA: Iniciamos en modo edición
+            enModoEdicion.value = true
+        } else {
+            // ES UNA LISTA EXISTENTE: Descargamos datos
+            viewModelScope.launch {
+                itemRepository.obtenerItemsLocales(currentListCod).collect { listaDesdeRoom ->
+                    _itemsUI.value = listaDesdeRoom
+                }
             }
-        }
-
-        // 3. Sincronizamos con el servidor Spring Boot en segundo plano
-        viewModelScope.launch {
-            repository.sincronizarItemsConServidor(listCod)
+            viewModelScope.launch {
+                itemRepository.sincronizarItemsConServidor(currentListCod)
+            }
         }
     }
 
@@ -38,9 +50,29 @@ class ItemViewModel(
         if (editar) {
             val textoActual = items.value.joinToString("\n") { it.itemName }
             textoEdicion.value = textoActual
+            tituloEdicion.value = if (tituloLista.value == "Lista sin nombre") "" else tituloLista.value
         } else {
-            // Pasamos a visualización: subimos los cambios
-            guardarItemsDesdeTexto()
+            // --- INICIO DEL GUARDADO DEMORADO ---
+            val tituloFinal = if (tituloEdicion.value.isBlank()) "Lista sin nombre" else tituloEdicion.value.trim()
+            tituloLista.value = tituloFinal
+
+            viewModelScope.launch {
+                if (currentListCod == -1) {
+                    // 1. Es una lista fantasma. La creamos en Room y obtenemos el ID real.
+                    currentListCod = listaRepository.crearListaRapidaLocal(tituloFinal)
+
+                    // 2. Ahora que ya tiene un ID real, empezamos a escuchar los cambios en BD
+                    launch {
+                        itemRepository.obtenerItemsLocales(currentListCod).collect { listaDesdeRoom ->
+                            _itemsUI.value = listaDesdeRoom
+                        }
+                    }
+                }
+
+                // 3. Guardamos los ítems usando el ID real
+                guardarItemsDesdeTexto()
+            }
+            // --- FIN DEL GUARDADO DEMORADO ---
         }
     }
 
@@ -48,10 +80,15 @@ class ItemViewModel(
         textoEdicion.value = nuevoTexto
     }
 
+    // función para actualizar el título mientras escribe
+    fun actualizarTituloEdicion(nuevoTitulo: String) {
+        tituloEdicion.value = nuevoTitulo
+    }
+
     private fun guardarItemsDesdeTexto() {
         viewModelScope.launch {
             val lineas = textoEdicion.value.lines().filter { it.isNotBlank() }
-            repository.guardarItemsSincronizados(listCod, lineas)
+            itemRepository.guardarItemsSincronizados(currentListCod, lineas)
         }
     }
 
@@ -77,7 +114,7 @@ class ItemViewModel(
             }
 
             // 3. Le pasamos el trabajo al Repositorio
-            repository.actualizarOrdenItemsLocales(listaActualizada)
+            itemRepository.actualizarOrdenItemsLocales(listaActualizada)
         }
     }
 }

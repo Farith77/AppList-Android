@@ -20,5 +20,8 @@ data class ListaEntity(
     val listImage: String? = null,
 
     @ColumnInfo(name = "list_order")
-    val listOrder: Int = 0
+    val listOrder: Int = 0,
+
+    @ColumnInfo(name = "is_deleted")
+    val isDeleted: Boolean = false
 )

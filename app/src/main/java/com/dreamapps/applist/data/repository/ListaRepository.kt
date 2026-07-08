@@ -10,7 +10,8 @@ class ListaRepository(
     private val listaDao: ListaDao,
     private val apiService: ListaApiService
 ) {
-    val listasLocales: Flow<List<ListaEntity>> = listaDao.obtenerTodasLasListas()
+    val listasLocales: Flow<List<ListaEntity>> = listaDao.obtenerListasActivas()
+    val listasEnPapelera: Flow<List<ListaEntity>> = listaDao.obtenerListasEnPapelera()
 
     // Operaciones locales que el ViewModel puede usar
     suspend fun crearListaSincronizada(nombre: String, descripcion: String?) {
@@ -54,20 +55,13 @@ class ListaRepository(
 
     suspend fun eliminarListaSincronizada(lista: ListaEntity) {
         try {
-            // 1. Le pedimos a Spring Boot que la elimine de PostgreSQL
-            val response = apiService.eliminarLista(lista.listCod)
+            // Eliminado lógico en Room local (se va a la papelera)
+            listaDao.moverListaAPapelera(lista.listCod)
 
-            if (response.isSuccessful) {
-                // 2. Si el servidor dice "OK", la borramos de nuestro celular
-                listaDao.eliminarLista(lista)
-                Log.d("API_TRACKER", "Lista eliminada con éxito: ${lista.listName}")
-            } else {
-                Log.e("API_TRACKER", "Spring Boot rechazó la eliminación. Código: ${response.code()}")
-            }
+            // TODO: Más adelante, cuando paguemos la deuda técnica,
+            // le avisaremos a Spring Boot que esta lista fue eliminada lógicamente.
         } catch (e: Exception) {
-            Log.e("API_TRACKER", "Error de red al intentar eliminar lista: ${e.message}")
-            // Nota SQA: En una app Offline-First completa, aquí marcaríamos la lista
-            // como "pendiente de borrado" en Room para borrarla cuando vuelva el internet.
+            Log.e("API_TRACKER", "Error al enviar lista a papelera: ${e.message}")
         }
     }
 
@@ -108,5 +102,28 @@ class ListaRepository(
             listDescription = descripcion
         )
         listaDao.insertarLista(entidadTemporal)
+    }
+
+    suspend fun restaurarLista(listCod: Int) {
+        listaDao.restaurarLista(listCod)
+    }
+
+    suspend fun eliminarListaFisicamente(lista: ListaEntity) {
+        listaDao.eliminarListaFisicamente(lista)
+        // TODO (Deuda técnica): Aquí también le avisaremos a Spring Boot para que haga el Hard Delete en la nube
+    }
+
+    suspend fun vaciarPapelera() {
+        listaDao.vaciarPapelera()
+        // TODO: Avisar a Spring Boot de vaciar papelera
+    }
+
+    suspend fun crearListaRapidaLocal(nombre: String): Int {
+        val nuevaLista = com.dreamapps.applist.data.local.entity.ListaEntity(
+            listName = nombre,
+            listDescription = ""
+        )
+        // Room inserta y nos devuelve el ID generado
+        return listaDao.insertarLista(nuevaLista).toInt()
     }
 }

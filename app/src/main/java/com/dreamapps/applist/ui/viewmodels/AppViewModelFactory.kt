@@ -10,6 +10,11 @@ class AppViewModelFactory(private val repository: ListaRepository) : ViewModelPr
             @Suppress("UNCHECKED_CAST")
             return ListaViewModel(repository) as T
         }
+        // NUEVO CASO PARA LA PAPELERA
+        if (modelClass.isAssignableFrom(PapeleraViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return PapeleraViewModel(repository) as T
+        }
         throw IllegalArgumentException("ViewModel desconocido")
     }
 }
