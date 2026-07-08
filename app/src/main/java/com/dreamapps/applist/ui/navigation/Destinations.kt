@@ -12,3 +12,6 @@ data class DestinoItems(
     val listCod: Int,
     val nombreLista: String
 )
+
+@Serializable
+object DestinoPapelera

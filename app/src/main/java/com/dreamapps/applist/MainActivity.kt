@@ -17,13 +17,17 @@ import com.dreamapps.applist.ui.navigation.DestinoItems
 import com.dreamapps.applist.ui.navigation.DestinoLista
 import com.dreamapps.applist.ui.screens.ItemScreen
 import com.dreamapps.applist.ui.screens.ListaScreen
-import com.dreamapps.applist.ui.theme.AppListTheme // El nombre del tema generado por defecto
+import com.dreamapps.applist.ui.theme.AppListTheme
 import com.dreamapps.applist.ui.viewmodels.AppViewModelFactory
 import com.dreamapps.applist.ui.viewmodels.ItemViewModel
 import com.dreamapps.applist.ui.viewmodels.ListaViewModel
 import com.dreamapps.applist.data.remote.api.RetrofitClient
-import com.dreamapps.applist.data.repository.ListaRepository
 import com.dreamapps.applist.data.repository.ItemRepository
+import com.dreamapps.applist.ui.viewmodels.ItemViewModelFactory
+import com.dreamapps.applist.data.repository.ListaRepository
+import com.dreamapps.applist.ui.navigation.DestinoPapelera
+import com.dreamapps.applist.ui.viewmodels.PapeleraViewModel
+import com.dreamapps.applist.ui.screens.PapeleraScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,11 +41,11 @@ class MainActivity : ComponentActivity() {
         val itemApiService = RetrofitClient.itemApiService
 
         // 3. Creamos el Repositorio dándole ambas herramientas
-        val repository = ListaRepository(database.listaDao(), apiService)
+        val listaRepository = ListaRepository(database.listaDao(), apiService)
         val itemRepository = ItemRepository(database.itemDao(), itemApiService)
 
         // 4. Se lo pasamos al Factory
-        val factory = AppViewModelFactory(repository)
+        val factory = AppViewModelFactory(listaRepository)
 
         setContent {
             AppListTheme {
@@ -64,7 +68,23 @@ class MainActivity : ComponentActivity() {
                                 viewModel = listaViewModel,
                                 onNavigateToItems = { id, nombre ->
                                     navController.navigate(DestinoItems(listCod = id, nombreLista = nombre))
+                                },
+                                onNavigateToPapelera = {
+                                    navController.navigate(DestinoPapelera)
                                 }
+                            )
+                        }
+                        // --- RUTA: Papelera ---
+                        composable<DestinoPapelera> {
+                            // Reutilizamos el Factory para inyectar el repositorio
+                            val papeleraViewModel: PapeleraViewModel = viewModel(
+                                factory = AppViewModelFactory(listaRepository)
+                                // OJO: Tendrás que añadir el caso para PapeleraViewModel en tu AppViewModelFactory
+                            )
+
+                            PapeleraScreen(
+                                viewModel = papeleraViewModel,
+                                onBack = { navController.popBackStack() }
                             )
                         }
 
@@ -73,14 +93,18 @@ class MainActivity : ComponentActivity() {
                             // Recuperamos los argumentos seguros que enviamos
                             val args = backStackEntry.toRoute<DestinoItems>()
 
-                            // Instanciamos el ItemViewModel pasándole el ID de la lista
-                            val itemViewModel: ItemViewModel = viewModel {
-                                ItemViewModel(itemRepository, args.listCod)
-                            }
+                            // Inyectamos AMBOS repositorios al Factory
+                            val itemViewModel: ItemViewModel = viewModel (
+                                factory = ItemViewModelFactory(
+                                    itemRepository = itemRepository,
+                                    listaRepository = listaRepository,
+                                    listCod = args.listCod,
+                                    nombreOriginal = args.nombreLista
+                                )
+                            )
 
                             ItemScreen(
                                 viewModel = itemViewModel,
-                                nombreLista = args.nombreLista,
                                 onBack = { navController.popBackStack() }
                             )
                         }
